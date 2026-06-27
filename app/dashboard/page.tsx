@@ -49,7 +49,7 @@ export default async function DashboardPage() {
         <p className="text-gray-500">No folders yet. Sync your LeetCode account to get started.</p>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {folders.map(folder => (
+          {folders.map((folder: any)=>(
             <Link
               key={folder.id}
               href={`/folders/${folder.id}`}
