@@ -40,8 +40,7 @@ export default async function FolderPage({ params }: Props) {
         </span>
       </div>
       <p className="text-gray-400 mb-8">{folder.problems.length} problems</p>
-
-      <ProblemList problems={folder.problems.map(({ problem }) => problem)} />
+      <ProblemList problems={folder.problems.map(({ problem }: any) => problem)} />
     </div>
   )
 }
