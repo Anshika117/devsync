@@ -12,12 +12,13 @@ interface Problem {
 
 interface Props {
   problems: Problem[]
+  initialStarred?: string[]
 }
 
-export default function ProblemList({ problems }: Props) {
+export default function ProblemList({ problems, initialStarred = [] }: Props) {
   const [search, setSearch] = useState("")
   const [difficulty, setDifficulty] = useState("All")
-  const [starred, setStarred] = useState<Set<string>>(new Set())
+  const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred))
 
   const filtered = problems.filter(p => {
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase())
@@ -47,7 +48,6 @@ export default function ProblemList({ problems }: Props) {
 
   return (
     <div>
-      {/* Search + Filter bar */}
       <div className="flex gap-3 mb-6">
         <input
           value={search}
@@ -70,12 +70,10 @@ export default function ProblemList({ problems }: Props) {
         ))}
       </div>
 
-      {/* Count */}
       <p className="text-gray-400 text-sm mb-4">
         {filtered.length} problem{filtered.length !== 1 ? "s" : ""}
       </p>
 
-      {/* Problem Cards */}
       <div className="flex flex-col gap-3">
         {filtered.map(problem => (
           <div key={problem.id} className="bg-gray-900 rounded-xl p-5 flex items-center justify-between hover:bg-gray-800 transition">
@@ -87,7 +85,6 @@ export default function ProblemList({ problems }: Props) {
                 {problem.title}
               </a>
             </div>
-
             <div className="flex items-center gap-4">
               <div className="hidden md:flex gap-2">
                 {problem.tags.slice(0, 2).map(tag => (

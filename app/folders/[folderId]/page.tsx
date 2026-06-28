@@ -13,18 +13,39 @@ export default async function FolderPage({ params }: Props) {
   const session = await auth()
   if (!session?.user?.id) redirect("/login")
 
-  const folder = await prisma.folder.findFirst({
-    where: { id: folderId, userId: session.user.id },
-    include: {
-      problems: {
-        include: {
-          problem: true
+  const userId = session.user.id
+
+  const [folder, revisionFolder] = await Promise.all([
+    prisma.folder.findFirst({
+      where: { id: folderId, userId },
+      include: {
+        problems: {
+          include: {
+            problem: {
+              select: {
+                id: true,
+                title: true,
+                url: true,
+                platform: true,
+                difficulty: true,
+                tags: true,
+              }
+            }
+          }
         }
       }
-    }
-  })
+    }),
+    prisma.folder.findFirst({
+      where: { userId, name: "Revision", type: "CUSTOM" },
+      include: { problems: { select: { problemId: true } } }
+    })
+  ])
 
   if (!folder) notFound()
+
+  const starredIds = new Set(
+    revisionFolder?.problems.map(p => p.problemId) ?? []
+  )
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-8">
@@ -40,7 +61,11 @@ export default async function FolderPage({ params }: Props) {
         </span>
       </div>
       <p className="text-gray-400 mb-8">{folder.problems.length} problems</p>
-      <ProblemList problems={folder.problems.map(({ problem }: any) => problem)} />
+
+      <ProblemList
+        problems={folder.problems.map(({ problem }: any) => problem)}
+        initialStarred={Array.from(starredIds)}
+      />
     </div>
   )
 }
