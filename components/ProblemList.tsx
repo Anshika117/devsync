@@ -8,6 +8,7 @@ interface Problem {
   platform: string
   difficulty: string
   tags: string[]
+  notes?: string | null
 }
 
 interface Props {
@@ -19,6 +20,11 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
   const [search, setSearch] = useState("")
   const [difficulty, setDifficulty] = useState("All")
   const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred))
+  const [noteModal, setNoteModal] = useState<{ problemId: string, title: string, notes: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [localNotes, setLocalNotes] = useState<Record<string, string>>(
+    Object.fromEntries(problems.map(p => [p.id, p.notes ?? ""]))
+  )
 
   const filtered = problems.filter(p => {
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase())
@@ -46,8 +52,59 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
     })
   }
 
+  async function saveNote() {
+    if (!noteModal) return
+    setSaving(true)
+    await fetch("/api/notes/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ problemId: noteModal.problemId, notes: noteModal.notes })
+    })
+    setLocalNotes(prev => ({ ...prev, [noteModal.problemId]: noteModal.notes }))
+    setSaving(false)
+    setNoteModal(null)
+  }
+
   return (
     <div>
+      {/* Notes Modal */}
+      {noteModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white">Notes — {noteModal.title}</h2>
+              <button onClick={() => setNoteModal(null)} className="text-gray-400 hover:text-white text-2xl">×</button>
+            </div>
+            <textarea
+              value={noteModal.notes}
+              onChange={e => setNoteModal({ ...noteModal, notes: e.target.value })}
+              placeholder="Enter a note... e.g. used sliding window, remember edge case when array is empty"
+              className="w-full bg-gray-800 text-white rounded-xl p-4 h-48 outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+              maxLength={2000}
+            />
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-xs text-gray-500">{noteModal.notes.length}/2000</span>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setNoteModal(null)}
+                  className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveNote}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition text-sm font-semibold"
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search + Filter */}
       <div className="flex gap-3 mb-6">
         <input
           value={search}
@@ -60,9 +117,7 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
             key={d}
             onClick={() => setDifficulty(d)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-              difficulty === d
-                ? "bg-blue-600 text-white"
-                : "bg-gray-900 text-gray-400 hover:text-white"
+              difficulty === d ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-400 hover:text-white"
             }`}
           >
             {d}
@@ -74,6 +129,7 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
         {filtered.length} problem{filtered.length !== 1 ? "s" : ""}
       </p>
 
+      {/* Problem Cards */}
       <div className="flex flex-col gap-3">
         {filtered.map(problem => (
           <div key={problem.id} className="bg-gray-900 rounded-xl p-5 flex items-center justify-between hover:bg-gray-800 transition">
@@ -84,7 +140,11 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
               <a href={problem.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-white hover:text-blue-400 transition">
                 {problem.title}
               </a>
+              {localNotes[problem.id] && (
+                <span className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded-full">note</span>
+              )}
             </div>
+
             <div className="flex items-center gap-4">
               <div className="hidden md:flex gap-2">
                 {problem.tags.slice(0, 2).map(tag => (
@@ -96,9 +156,22 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
               <span className={`text-sm font-semibold ${difficultyColor[problem.difficulty] ?? "text-gray-400"}`}>
                 {problem.difficulty}
               </span>
+
+              <button
+                onClick={() => setNoteModal({
+                  problemId: problem.id,
+                  title: problem.title,
+                  notes: localNotes[problem.id] ?? ""
+                })}
+                className="text-gray-500 hover:text-blue-400 transition cursor-pointer"
+                title="Add note"
+              >
+                📝
+              </button>
+
               <button
                 onClick={() => toggleRevision(problem.id)}
-                className={`transition text-xl ${starred.has(problem.id) ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"}`}
+                className={`transition text-2xl cursor-pointer ${starred.has(problem.id) ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"}`}
               >
                 {starred.has(problem.id) ? "★" : "☆"}
               </button>

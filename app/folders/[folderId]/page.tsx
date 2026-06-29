@@ -29,6 +29,7 @@ export default async function FolderPage({ params }: Props) {
                 platform: true,
                 difficulty: true,
                 tags: true,
+                notes: true,
               }
             }
           }
