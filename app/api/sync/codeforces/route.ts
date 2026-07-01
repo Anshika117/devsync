@@ -24,9 +24,10 @@ export async function POST(req: Request) {
 
   try {
     const res = await fetch(
-      `https://codeforces.com/api/user.status?handle=${username}&from=1&count=100`
+      `https://codeforces.com/api/user.status?handle=${username}&from=1&count=10000`
     )
     const data = await res.json()
+    console.log(data)
 
     if (data.status !== "OK") {
       return NextResponse.json({ error: "Invalid CF handle" }, { status: 400 })
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
     })
 
     for (const sub of unique) {
+      console.log(sub.problem.contestId, sub.problem.index, sub.problem.name);
       const p = sub.problem
       const tags: string[] = p.tags ?? []
       const primaryTag = getPrimaryTag(tags.length > 0 ? tags : ["Uncategorized"])
