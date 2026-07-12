@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function ProfileForm({ lcUsername, cfHandle }: Props) {
+  const router = useRouter()
   const [lc, setLc] = useState(lcUsername)
   const [cf, setCf] = useState(cfHandle)
   const [saving, setSaving] = useState(false)
@@ -51,7 +53,9 @@ export default function ProfileForm({ lcUsername, cfHandle }: Props) {
     toast.success(
       `${platform === "leetcode" ? "LeetCode" : "Codeforces"} sync started — your dashboard will update in a few seconds.`
     )
-    window.location.href = "/dashboard"
+    // router.push (Next's client-side navigation) instead of a hard redirect
+    // — keeps the already-loaded JS running instead of reloading the browser.
+    router.push("/dashboard")
   }
 
   return (

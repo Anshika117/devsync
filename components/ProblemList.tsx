@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 interface Problem {
   id: string
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function ProblemList({ problems, initialStarred = [], currentFolderId, allFolders = [] }: Props) {
+  const router = useRouter()
   const [search, setSearch] = useState("")
   const [difficulty, setDifficulty] = useState("All")
   const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred))
@@ -85,7 +87,7 @@ export default function ProblemList({ problems, initialStarred = [], currentFold
       body: JSON.stringify({ problemId, fromFolderId: currentFolderId, toFolderId })
     })
     setMovingProblem(null)
-    window.location.reload()
+    router.refresh()
   }
 
   return (

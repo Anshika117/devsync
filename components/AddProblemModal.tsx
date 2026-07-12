@@ -1,11 +1,13 @@
 "use client"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 interface Props {
   folderId: string
 }
 
 export default function AddProblemModal({ folderId }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState("")
   const [url, setUrl] = useState("")
@@ -49,7 +51,9 @@ export default function AddProblemModal({ folderId }: Props) {
     setOpen(false)
     setTitle("")
     setUrl("")
-    window.location.reload()
+    // router.refresh() re-runs the folder page's server-side data fetch and
+    // patches the DOM in place — no full page reload, no lost client state.
+    router.refresh()
   }
 
   return (
