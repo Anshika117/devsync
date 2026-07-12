@@ -10,16 +10,33 @@ function getRating(rating: number): Difficulty {
   return "Hard"
 }
 
+type CFSubmission = {
+  verdict: string
+  creationTimeSeconds: number
+  problem: {
+    contestId: number
+    index: string
+    name: string
+    tags: string[]
+    rating?: number
+  }
+}
+
+type CFStatusResponse = {
+  status: string
+  result: CFSubmission[]
+}
+
 async function runCFSync(username: string, userId: string) {
   const res = await fetch(
     `https://codeforces.com/api/user.status?handle=${username}&from=1&count=10000`
   )
-  const data = await res.json()
+  const data = (await res.json()) as CFStatusResponse
   if (data.status !== "OK") return
 
-  const accepted = data.result.filter((s: any) => s.verdict === "OK")
+  const accepted = data.result.filter((s) => s.verdict === "OK")
   const seen = new Set<string>()
-  const unique = accepted.filter((s: any) => {
+  const unique = accepted.filter((s) => {
     const key = `${s.problem.contestId}-${s.problem.index}`
     if (seen.has(key)) return false
     seen.add(key)

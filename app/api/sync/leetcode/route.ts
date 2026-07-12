@@ -183,14 +183,15 @@ async function runLeetCodeSync(username: string, userId: string) {
     })
 
     return synced
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("LeetCode sync error:", error)
+    const message = error instanceof Error ? error.message : "Unknown error"
     await prisma.activityLog.create({
       data: {
         userId,
         action: "LEETCODE_SYNC",
         status: "FAILED",
-        error: error.message,
+        error: message,
       },
     })
     return 0

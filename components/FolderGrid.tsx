@@ -34,7 +34,7 @@ export default function FolderGrid({ folders, emptyMessage }: Props) {
         className="w-full bg-gray-900 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-purple-500 mb-6 text-sm"
       />
       {filtered.length === 0 ? (
-        <p className="text-gray-500">No folders match "{search}".</p>
+        <p className="text-gray-500">No folders match &quot;{search}&quot;.</p>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {filtered.map(folder => {

@@ -115,13 +115,14 @@ export async function POST(req: Request) {
       success: true,
       problem,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Add problem error:", error)
+    const details = error instanceof Error ? error.message : "Unknown error"
 
     return NextResponse.json(
       {
         error: "Failed to add problem",
-        details: error.message,
+        details,
       },
       { status: 500 }
     )

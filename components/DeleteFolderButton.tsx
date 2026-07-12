@@ -40,7 +40,7 @@ export default function DeleteFolderButton({ folderId, folderName, allFolders }:
       {showModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 rounded-2xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-white mb-2">Delete "{folderName}"?</h2>
+            <h2 className="text-lg font-bold text-white mb-2">Delete &quot;{folderName}&quot;?</h2>
             <p className="text-gray-400 text-sm mb-6">What should happen to the problems inside?</p>
 
             <div className="flex flex-col gap-4 mb-6">
