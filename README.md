@@ -372,7 +372,7 @@ This project taught me things no tutorial covers:
 
 ## Author
 
-**Anshika Sinha** — 2nd year CS student at BIT Mesra, building toward FAANG internships.
+**Anshika Sinha** — 2nd year CS student at BIT Mesra.
 
 - GitHub: [@Anshika117](https://github.com/Anshika117)
 - LeetCode: [Anna023](https://leetcode.com/u/Anna023)
