@@ -11,6 +11,11 @@ export async function POST(req: Request) {
   const { problemId } = await req.json()
   const userId = session.user.id
 
+  const problem = await prisma.problem.findFirst({ where: { id: problemId, userId } })
+  if (!problem) {
+    return NextResponse.json({ error: "Problem not found" }, { status: 404 })
+  }
+
   // Find or create Revision folder
   const revisionFolder = await prisma.folder.upsert({
     where: {

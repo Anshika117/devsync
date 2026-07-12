@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { toast } from "sonner"
 
 interface Props {
   lcUsername: string
@@ -25,14 +26,32 @@ export default function ProfileForm({ lcUsername, cfHandle }: Props) {
   }
 
   async function handleSync(platform: "leetcode" | "codeforces") {
-    await fetch(`/api/sync/${platform}`, {
+    const username = platform === "leetcode" ? lc : cf
+    if (!username?.trim()) {
+      toast.error(`Enter your ${platform === "leetcode" ? "LeetCode username" : "Codeforces handle"} first`)
+      return
+    }
+
+    const res = await fetch(`/api/sync/${platform}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        username: platform === "leetcode" ? lc : cf 
-      })
+      body: JSON.stringify({ username })
     })
-    alert(`${platform} sync complete!`)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error || `${platform === "leetcode" ? "LeetCode" : "Codeforces"} sync failed to start`)
+      return
+    }
+
+    // Both sync routes run in the background (see /api/sync/*) and respond
+    // immediately, so there's nothing to await here — just tell the user and
+    // send them to the dashboard, which reflects new data once the background
+    // job finishes (usually a few seconds).
+    toast.success(
+      `${platform === "leetcode" ? "LeetCode" : "Codeforces"} sync started — your dashboard will update in a few seconds.`
+    )
+    window.location.href = "/dashboard"
   }
 
   return (

@@ -9,7 +9,8 @@ export default function AIAssistant() {
   const [result, setResult] = useState<{
     context: string
     hints: string[]
-    similarToSolved: string
+    similarFound: string
+    similarApproach: string
     source: string
   } | null>(null)
   const [error, setError] = useState("")
@@ -19,10 +20,14 @@ export default function AIAssistant() {
     setLoading(true)
     setError("")
     try {
-      const res = await fetch("/api/hint", {
+      const res = await fetch("/api/hint/rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ problemStatement })
+        body: JSON.stringify({
+          problemStatement,
+          problemTitle: "",
+          tags: []
+        })
       })
       const data = await res.json()
       if (data.error) {
@@ -121,9 +126,12 @@ export default function AIAssistant() {
                   </div>
                 )}
 
-                {result.similarToSolved && (
+                {result.similarFound && (
                   <div className="bg-blue-900/40 border border-blue-700 rounded-xl p-4 mb-4">
-                    <p className="text-blue-300 text-sm">🔗 {result.similarToSolved}</p>
+                    <p className="text-blue-300 text-sm">🔗 Similar to: {result.similarFound}</p>
+                    {result.similarApproach && (
+                      <p className="text-blue-200/80 text-xs mt-1">{result.similarApproach}</p>
+                    )}
                   </div>
                 )}
 

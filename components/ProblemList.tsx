@@ -14,9 +14,11 @@ interface Problem {
 interface Props {
   problems: Problem[]
   initialStarred?: string[]
+  currentFolderId?: string
+  allFolders?: { id: string, name: string }[]
 }
 
-export default function ProblemList({ problems, initialStarred = [] }: Props) {
+export default function ProblemList({ problems, initialStarred = [], currentFolderId, allFolders = [] }: Props) {
   const [search, setSearch] = useState("")
   const [difficulty, setDifficulty] = useState("All")
   const [starred, setStarred] = useState<Set<string>>(new Set(initialStarred))
@@ -25,6 +27,7 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
   const [localNotes, setLocalNotes] = useState<Record<string, string>>(
     Object.fromEntries(problems.map(p => [p.id, p.notes ?? ""]))
   )
+  const [movingProblem, setMovingProblem] = useState<string | null>(null)
 
   const filtered = problems.filter(p => {
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase())
@@ -39,12 +42,22 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
   }
 
   async function toggleRevision(problemId: string) {
+    // Optimistic update — toggle immediately
+    setStarred(prev => {
+      const next = new Set(prev)
+      next.has(problemId) ? next.delete(problemId) : next.add(problemId)
+      return next
+    })
+    
+    // Then sync with server
     const res = await fetch("/api/revision/toggle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ problemId })
     })
     const data = await res.json()
+    
+    // Correct if server disagrees
     setStarred(prev => {
       const next = new Set(prev)
       data.starred ? next.add(problemId) : next.delete(problemId)
@@ -63,6 +76,16 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
     setLocalNotes(prev => ({ ...prev, [noteModal.problemId]: noteModal.notes }))
     setSaving(false)
     setNoteModal(null)
+  }
+
+  async function moveProblem(problemId: string, toFolderId: string) {
+    await fetch("/api/problem/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ problemId, fromFolderId: currentFolderId, toFolderId })
+    })
+    setMovingProblem(null)
+    window.location.reload()
   }
 
   return (
@@ -85,17 +108,8 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
             <div className="flex justify-between items-center mt-2">
               <span className="text-xs text-gray-500">{noteModal.notes.length}/2000</span>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setNoteModal(null)}
-                  className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveNote}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition text-sm font-semibold"
-                >
+                <button onClick={() => setNoteModal(null)} className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition text-sm">Cancel</button>
+                <button onClick={saveNote} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition text-sm font-semibold">
                   {saving ? "Saving..." : "Save"}
                 </button>
               </div>
@@ -145,34 +159,56 @@ export default function ProblemList({ problems, initialStarred = [] }: Props) {
               )}
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <div className="hidden md:flex gap-2">
                 {problem.tags.slice(0, 2).map(tag => (
-                  <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-300">
-                    {tag}
-                  </span>
+                  <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-300">{tag}</span>
                 ))}
               </div>
               <span className={`text-sm font-semibold ${difficultyColor[problem.difficulty] ?? "text-gray-400"}`}>
                 {problem.difficulty}
               </span>
 
+              {/* Notes */}
               <button
-                onClick={() => setNoteModal({
-                  problemId: problem.id,
-                  title: problem.title,
-                  notes: localNotes[problem.id] ?? ""
-                })}
+                onClick={() => setNoteModal({ problemId: problem.id, title: problem.title, notes: localNotes[problem.id] ?? "" })}
                 className="text-gray-500 hover:text-blue-400 transition cursor-pointer"
                 title="Add note"
               >
                 📝
               </button>
 
+              {/* Move to folder */}
+              {allFolders.length > 1 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setMovingProblem(movingProblem === problem.id ? null : problem.id)}
+                    className="text-gray-500 hover:text-white transition cursor-pointer"
+                    title="Move to folder"
+                  >
+                    📂
+                  </button>
+                  {movingProblem === problem.id && (
+                    <div className="absolute right-0 top-8 bg-gray-800 rounded-xl shadow-xl z-10 min-w-44 overflow-hidden border border-gray-700">
+                      <p className="text-xs text-gray-400 px-3 py-2 border-b border-gray-700">Move to:</p>
+                      {allFolders.filter(f => f.id !== currentFolderId).map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => moveProblem(problem.id, f.id)}
+                          className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 transition"
+                        >
+                          📁 {f.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Revision star */}
               <button
                 onClick={() => toggleRevision(problem.id)}
-                className={`transition text-2xl cursor-pointer ${starred.has(problem.id) ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"}`}
-              >
+                className={`transition text-3xl cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-700 ${starred.has(problem.id) ? "text-yellow-400" : "text-gray-500 hover:text-yellow-400"}`}              >
                 {starred.has(problem.id) ? "★" : "☆"}
               </button>
             </div>

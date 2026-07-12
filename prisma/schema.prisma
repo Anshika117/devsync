@@ -11,6 +11,20 @@ enum FolderType {
   CUSTOM
 }
 
+enum Platform {
+  LeetCode
+  Codeforces
+  CodeChef
+  Other
+}
+
+enum Difficulty {
+  Easy
+  Medium
+  Hard
+  Unknown
+}
+
 model User {
   id              String            @id @default(cuid())
   email           String            @unique
@@ -21,44 +35,44 @@ model User {
   folders         Folder[]
   problems        Problem[]
   goals           Goal[]
-  progressRecords ProblemProgress[] 
+  progressRecords ProblemProgress[]
   activityLogs    ActivityLog[]
   revisionAlerts  RevisionAlert[]
-  lcUsername      String?   // ADD THIS
-  cfHandle        String?   // ADD THIS
+  lcUsername      String? // LeetCode username, set via profile page
+  cfHandle        String? // Codeforces handle, set via profile page
   accounts        Account[]
   sessions        Session[]
-
 }
 
 model Folder {
   id        String          @id @default(cuid())
-  name      String          // e.g., "Greedy", "Arrays" (AUTO) or "Google Prep" (CUSTOM)
+  name      String // e.g., "Greedy", "Arrays" (AUTO) or "Google Prep" (CUSTOM)
   type      FolderType      @default(AUTO)
   userId    String
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  problems  FolderProblem[] 
+  problems  FolderProblem[]
   createdAt DateTime        @default(now())
 
-  @@unique([userId, name, type]) 
+  @@unique([userId, name, type])
 }
 
 model Problem {
-  id          String          @id @default(cuid())
-  title       String
-  platform    String          // "LeetCode", "Codeforces", "CodeChef"
-  difficulty  String          // Normalized: "Easy", "Medium", "Hard"
-  tags        String[]        // Raw array of tags from platform APIs
-  url         String          @unique 
-  code        String?         @db.Text
-  notes       String?         @db.Text
-  userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folders     FolderProblem[] 
-  solvedAt    DateTime?
-  createdAt   DateTime        @default(now())
-  progress    ProblemProgress?
+  id         String           @id @default(cuid())
+  title      String
+  platform   Platform
+  difficulty Difficulty       @default(Unknown)
+  tags       String[] // Raw array of tags from platform APIs
+  url        String
+  code       String?          @db.Text
+  notes      String?          @db.Text
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders    FolderProblem[]
+  solvedAt   DateTime?
+  createdAt  DateTime         @default(now())
+  progress   ProblemProgress?
 
+  @@unique([userId, url], name: "userId_url")
   @@index([userId])
   @@index([platform])
   @@index([difficulty])
@@ -72,28 +86,28 @@ model FolderProblem {
   problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
-  @@unique([folderId, problemId]) 
+  @@unique([folderId, problemId])
   @@index([folderId])
   @@index([problemId])
 }
 
 model ProblemProgress {
-  id             String    @id @default(cuid())
-  problemId      String    @unique
-  problem        Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  firstSolvedAt  DateTime  @default(now())
-  lastViewedAt   DateTime  @default(now())
-  lastRevisedAt  DateTime?
-  
-  revisionCount  Int       @default(0)
-  mistakeCount   Int       @default(0)
-  retentionScore Float     @default(0.0) 
+  id        String  @id @default(cuid())
+  problemId String  @unique
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  firstSolvedAt DateTime  @default(now())
+  lastViewedAt  DateTime  @default(now())
+  lastRevisedAt DateTime?
+
+  revisionCount  Int   @default(0)
+  mistakeCount   Int   @default(0)
+  retentionScore Float @default(0.0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
 }
@@ -102,8 +116,8 @@ model ActivityLog {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  action    String   // "LEETCODE_SYNC", "AI_CLASSIFICATION", "EMBEDDING_GEN"
-  status    String   // "PENDING", "PROCESSING", "SUCCESS", "FAILED"
+  action    String // "LEETCODE_SYNC", "AI_CLASSIFICATION", "EMBEDDING_GEN"
+  status    String // "PENDING", "PROCESSING", "SUCCESS", "FAILED"
   error     String?  @db.Text
   createdAt DateTime @default(now())
 }
@@ -112,23 +126,23 @@ model RevisionAlert {
   id            String   @id @default(cuid())
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  topic         String   // e.g., "Dynamic Programming"
+  topic         String // e.g., "Dynamic Programming"
   questionCount Int
   avgScore      Float
   generatedAt   DateTime @default(now())
 }
 
 model Goal {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  weeklyEasy  Int      @default(0)
-  weeklyMed   Int      @default(0)
-  weeklyHard  Int      @default(0)
-  doneEasy    Int      @default(0)
-  doneMed     Int      @default(0)
-  doneHard    Int      @default(0)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyEasy Int      @default(0)
+  weeklyMed  Int      @default(0)
+  weeklyHard Int      @default(0)
+  doneEasy   Int      @default(0)
+  doneMed    Int      @default(0)
+  doneHard   Int      @default(0)
+  createdAt  DateTime @default(now())
 }
 
 model Account {
