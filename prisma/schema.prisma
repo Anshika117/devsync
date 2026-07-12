@@ -40,8 +40,10 @@ model User {
   revisionAlerts  RevisionAlert[]
   lcUsername      String? // LeetCode username, set via profile page
   cfHandle        String? // Codeforces handle, set via profile page
+  bufferDay       Int? // 0 (Sunday) - 6 (Saturday). The day the buffer-list reminder popup shows.
   accounts        Account[]
   sessions        Session[]
+  dailyGoals      DailyGoal[]
 }
 
 model Folder {
@@ -143,6 +145,20 @@ model Goal {
   doneMed    Int      @default(0)
   doneHard   Int      @default(0)
   createdAt  DateTime @default(now())
+}
+
+model DailyGoal {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  done        Boolean   @default(false)
+  targetDate  DateTime // truncated to midnight — the day this goal is/was for
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([targetDate])
 }
 
 model Account {

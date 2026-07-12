@@ -6,6 +6,7 @@ import Link from "next/link"
 import FolderGrid from "@/components/FolderGrid"
 import CreateFolderButton from "@/components/CreateFolderButton"
 import { syncNeedsRevisionFolder } from "@/lib/revisionEngine"
+import { getWeeklyCompletion } from "@/lib/goalEngine"
 
 // Folder names that should always float to the top of the dashboard,
 // regardless of type/creation-date ordering — in this priority order.
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
   const { count: staleCount, folderId: needsRevisionFolderId } =
     await syncNeedsRevisionFolder(userId)
 
-  const [folders, problemCount] = await Promise.all([
+  const [folders, problemCount, weeklyCompletion] = await Promise.all([
     prisma.folder.findMany({
       where: { userId },
       include: { _count: { select: { problems: true } } },
@@ -33,8 +34,17 @@ export default async function DashboardPage() {
         { createdAt: "asc" }
       ],
     }),
-    prisma.problem.count({ where: { userId } })
+    prisma.problem.count({ where: { userId } }),
+    getWeeklyCompletion(userId),
   ])
+
+  // Average completion across days that have already happened this week
+  // (today included) — future days would just drag the average toward 0%
+  // for no reason since they haven't happened yet.
+  const daysSoFar = weeklyCompletion.filter(d => !d.isFuture)
+  const weeklyPercent = daysSoFar.length === 0
+    ? 0
+    : Math.round(daysSoFar.reduce((sum, d) => sum + d.percent, 0) / daysSoFar.length)
 
   const sortedFolders = [...folders].sort((a, b) => {
     const aPin = PINNED_FOLDER_NAMES.indexOf(a.name)
@@ -73,10 +83,10 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-semibold mb-1">Folders</h2>
           <p className="text-4xl font-bold text-purple-400">{folders.length}</p>
         </div>
-        <div className="bg-gray-900 rounded-xl p-6">
+        <Link href="/goals" className="bg-gray-900 rounded-xl p-6 hover:bg-gray-800 transition block">
           <h2 className="text-lg font-semibold mb-1">Weekly Goal</h2>
-          <p className="text-4xl font-bold text-green-400">0%</p>
-        </div>
+          <p className="text-4xl font-bold text-green-400">{weeklyPercent}%</p>
+        </Link>
       </div>
 
       {/* Folders */}

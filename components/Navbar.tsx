@@ -8,6 +8,7 @@ export default function Navbar() {
       </Link>
       <div className="flex gap-6">
         <Link href="/dashboard" className="text-gray-400 hover:text-white transition text-sm">Dashboard</Link>
+        <Link href="/goals" className="text-gray-400 hover:text-white transition text-sm">Goals</Link>
         <Link href="/profile" className="text-gray-400 hover:text-white transition text-sm">Profile</Link>
       </div>
     </nav>

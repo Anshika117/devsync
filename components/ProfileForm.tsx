@@ -6,12 +6,16 @@ import { toast } from "sonner"
 interface Props {
   lcUsername: string
   cfHandle: string
+  bufferDay: number | null
 }
 
-export default function ProfileForm({ lcUsername, cfHandle }: Props) {
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+export default function ProfileForm({ lcUsername, cfHandle, bufferDay }: Props) {
   const router = useRouter()
   const [lc, setLc] = useState(lcUsername)
   const [cf, setCf] = useState(cfHandle)
+  const [buffer, setBuffer] = useState<number | null>(bufferDay)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -20,7 +24,7 @@ export default function ProfileForm({ lcUsername, cfHandle }: Props) {
     await fetch("/api/profile/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lcUsername: lc, cfHandle: cf })
+      body: JSON.stringify({ lcUsername: lc, cfHandle: cf, bufferDay: buffer })
     })
     setSaving(false)
     setSaved(true)
@@ -92,6 +96,24 @@ export default function ProfileForm({ lcUsername, cfHandle }: Props) {
         >
           Sync Codeforces
         </button>
+      </div>
+
+      {/* Buffer day */}
+      <div className="bg-gray-900 rounded-xl p-6">
+        <h2 className="text-lg font-semibold mb-1">Buffer Day</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          The day a reminder pops up if you have unfinished goals sitting in your buffer list.
+        </p>
+        <select
+          value={buffer ?? ""}
+          onChange={e => setBuffer(e.target.value === "" ? null : Number(e.target.value))}
+          className="w-full bg-gray-800 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Not set</option>
+          {WEEKDAY_LABELS.map((label, i) => (
+            <option key={i} value={i}>{label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Save button */}

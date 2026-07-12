@@ -9,7 +9,7 @@ export default async function ProfilePage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { name: true, email: true, image: true, lcUsername: true, cfHandle: true }
+    select: { name: true, email: true, image: true, lcUsername: true, cfHandle: true, bufferDay: true }
   })
 
   return (
@@ -27,7 +27,11 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      <ProfileForm lcUsername={user?.lcUsername ?? ""} cfHandle={user?.cfHandle ?? ""} />
+      <ProfileForm
+        lcUsername={user?.lcUsername ?? ""}
+        cfHandle={user?.cfHandle ?? ""}
+        bufferDay={user?.bufferDay ?? null}
+      />
     </div>
   )
 }
