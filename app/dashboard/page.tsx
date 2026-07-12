@@ -2,8 +2,14 @@ export const dynamic = 'force-dynamic'
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
+import Link from "next/link"
 import FolderGrid from "@/components/FolderGrid"
 import CreateFolderButton from "@/components/CreateFolderButton"
+import { syncNeedsRevisionFolder } from "@/lib/revisionEngine"
+
+// Folder names that should always float to the top of the dashboard,
+// regardless of type/creation-date ordering — in this priority order.
+const PINNED_FOLDER_NAMES = ["Needs Revision", "Revision"]
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -12,6 +18,11 @@ export default async function DashboardPage() {
   }
 
   const userId = session.user.id
+
+  // Runs first (not inside the Promise.all below) because it can create the
+  // "Needs Revision" folder — the folders query right after needs to see it.
+  const { count: staleCount, folderId: needsRevisionFolderId } =
+    await syncNeedsRevisionFolder(userId)
 
   const [folders, problemCount] = await Promise.all([
     prisma.folder.findMany({
@@ -25,10 +36,32 @@ export default async function DashboardPage() {
     prisma.problem.count({ where: { userId } })
   ])
 
+  const sortedFolders = [...folders].sort((a, b) => {
+    const aPin = PINNED_FOLDER_NAMES.indexOf(a.name)
+    const bPin = PINNED_FOLDER_NAMES.indexOf(b.name)
+    if (aPin === -1 && bPin === -1) return 0
+    if (aPin === -1) return 1
+    if (bPin === -1) return -1
+    return aPin - bPin
+  })
+
   return (
     <div className="min-h-screen bg-gray-950 text-white p-8">
       <h1 className="text-3xl font-bold mb-2">Welcome back 👋</h1>
       <p className="text-gray-400 mb-8">Logged in as {session.user.email}</p>
+
+      {staleCount > 0 && needsRevisionFolderId && (
+        <Link
+          href={`/folders/${needsRevisionFolderId}`}
+          className="mb-8 flex items-center gap-3 rounded-xl border border-orange-700/50 bg-orange-950/40 p-4 text-sm text-orange-200 hover:bg-orange-950/60 transition"
+        >
+          <span className="text-xl">🔥</span>
+          <span>
+            You have <strong>{staleCount}</strong> problem{staleCount !== 1 ? "s" : ""} not visited in
+            over a month — head to <span className="underline font-semibold">Needs Revision</span> to catch up.
+          </span>
+        </Link>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
@@ -52,7 +85,7 @@ export default async function DashboardPage() {
         <CreateFolderButton />
       </div>
       <FolderGrid
-        folders={folders}
+        folders={sortedFolders}
         emptyMessage="No folders yet. Sync your LeetCode account to get started."
       />
     </div>

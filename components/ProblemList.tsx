@@ -80,6 +80,16 @@ export default function ProblemList({ problems, initialStarred = [], currentFold
     setNoteModal(null)
   }
 
+  function markViewed(problemId: string) {
+    // Best-effort, fire-and-forget — this shouldn't block or interrupt the
+    // browser opening the problem link in a new tab.
+    fetch("/api/problem/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ problemId })
+    }).catch(() => {})
+  }
+
   async function moveProblem(problemId: string, toFolderId: string) {
     await fetch("/api/problem/move", {
       method: "POST",
@@ -153,7 +163,13 @@ export default function ProblemList({ problems, initialStarred = [], currentFold
               <span className="text-xs font-bold px-2 py-1 rounded bg-yellow-500 text-black">
                 {problem.platform === "LeetCode" ? "LC" : problem.platform === "Codeforces" ? "CF" : "CC"}
               </span>
-              <a href={problem.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-white hover:text-blue-400 transition">
+              <a
+                href={problem.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => markViewed(problem.id)}
+                className="font-semibold text-white hover:text-blue-400 transition"
+              >
                 {problem.title}
               </a>
               {localNotes[problem.id] && (
