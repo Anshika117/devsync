@@ -1,13 +1,7 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-const nextConfig: NextConfig = {
-  experimental: {
-    turbo: {
-      enabled: false
-    }
-  }
-}
+const nextConfig: NextConfig = {}
 
 // withSentryConfig wraps the build to also upload source maps to Sentry
 // (so a stack trace in the dashboard points at real source lines instead of

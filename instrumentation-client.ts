@@ -18,3 +18,9 @@ Sentry.init({
   replaysSessionSampleRate: 0,
   replaysOnErrorSampleRate: 0,
 })
+
+// Required export as of the Sentry Next.js SDK's App Router instrumentation —
+// without it, client-side route changes (e.g. dashboard -> folder detail)
+// aren't tracked as part of a transaction/breadcrumb trail, only the errors
+// themselves. Just wires Sentry's own router-transition hook through.
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
