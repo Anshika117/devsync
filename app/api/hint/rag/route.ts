@@ -4,6 +4,8 @@ import { redis } from "@/lib/redis"
 import { buildUserProfile } from "@/lib/profileBuilder"
 import { prisma } from "@/lib/prisma"
 import { GoogleGenerativeAI } from "@google/generative-ai"
+import { classifyTopicFromText, getFolderTier, normalizeTag } from "@/lib/tagNormalizer"
+import { parseBody, hintRagSchema } from "@/lib/validation"
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -24,33 +26,31 @@ function extractKeywords(text: string): string[] {
     .filter(w => w.length > 3 && !stopWords.has(w))
 }
 
-async function findSimilarSolvedProblems(userId: string, problemStatement: string, tags: string[]) {
+async function findSimilarSolvedProblems(userId: string, problemStatement: string, tags: string[], topic: string | null) {
   const keywords = extractKeywords(problemStatement)
-  
+
   const userProblems = await prisma.problem.findMany({
     where: { userId },
     select: { id: true, title: true, tags: true, notes: true, difficulty: true, url: true }
   })
 
-  const scored = userProblems.map(p => {
-    let score = 0
+  function score(p: (typeof userProblems)[number]): number {
     const titleWords = extractKeywords(p.title)
-    
-    // Tag overlap
     const tagOverlap = p.tags.filter(t => tags.includes(t)).length
-    score += tagOverlap * 3
-
-    // Keyword overlap in title
     const titleOverlap = titleWords.filter(w => keywords.includes(w)).length
-    score += titleOverlap * 2
+    return tagOverlap * 3 + titleOverlap * 2 + (p.notes ? 1 : 0)
+  }
 
-    // Has notes bonus
-    if (p.notes) score += 1
+  // Scope to the guessed topic branch first, widen one tier up if that's too
+  // thin, then fall back to the full history — a wrong guess or a sparsely
+  // practiced topic should never mean zero context, just less-targeted context.
+  const tier = topic ? getFolderTier(topic) : null
+  const branch = topic ? userProblems.filter(p => p.tags.some(t => normalizeTag(t) === topic)) : []
+  const tierPool = tier ? userProblems.filter(p => p.tags.some(t => getFolderTier(normalizeTag(t)) === tier)) : []
+  const pool = branch.length >= 2 ? branch : tierPool.length >= 2 ? tierPool : userProblems
 
-    return { ...p, score }
-  })
-
-  return scored
+  return pool
+    .map(p => ({ ...p, score: score(p) }))
     .filter(p => p.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
@@ -62,13 +62,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { problemStatement, problemTitle, tags = [] } = await req.json()
-  if (!problemStatement?.trim()) {
-    return NextResponse.json({ error: "Problem statement required" }, { status: 400 })
-  }
+  const parsedBody = parseBody(hintRagSchema, await req.json())
+  if ("error" in parsedBody) return parsedBody.error
+  const { problemStatement, problemTitle, tags } = parsedBody.data
 
   const userId = session.user.id
-  const problemHash = hashString(problemStatement.trim())
+  const problemHash = hashString(problemStatement)
   const cacheKey = `rag_hint:${userId}:${problemHash}`
   const rateLimitKey = `hint_count:${userId}:${new Date().toISOString().split("T")[0]}`
 
@@ -84,11 +83,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Daily limit of 10 hints reached." }, { status: 429 })
   }
 
-  // Step 3: Find similar solved problems (RAG retrieval)
-  const similarProblems = await findSimilarSolvedProblems(userId, problemStatement, tags)
+  // Step 3: Find similar solved problems, scoped to the problem's topic branch
+  const topic = classifyTopicFromText(problemStatement)
+  const similarProblems = await findSimilarSolvedProblems(userId, problemStatement, tags, topic)
 
-  // Step 4: Build user profile
-  const profile = await buildUserProfile(userId)
+  // Step 4: Build user profile, including branch-specific stats for the classified topic
+  const profile = await buildUserProfile(userId, topic)
 
   // Step 5: Build RAG-enhanced prompt
   const similarContext = similarProblems.length > 0
@@ -107,6 +107,7 @@ USER PROFILE:
 - Strong topics: ${profile.strengths.join(", ")}
 - Weak topics: ${profile.weaknesses.join(", ")}
 - Recently solved: ${profile.recentProblems.join(", ")}
+${profile.branchProfile ? `- In ${profile.branchProfile.topic} specifically: ${profile.branchProfile.solved} solved (${profile.branchProfile.hard} hard), struggled on ${profile.branchProfile.struggled} of them` : ""}
 
 ${similarContext}
 
@@ -143,9 +144,16 @@ Respond ONLY with valid JSON:
     return NextResponse.json({ error: "AI response parsing failed" }, { status: 500 })
   }
 
-  await redis.set(cacheKey, parsed, { ex: 86400 })
+  // Surface the classified topic to the frontend too — lets the UI show
+  // *why* a hint looks the way it does (which branch retrieval was scoped
+  // to) instead of that step staying invisible. Stored in the cached
+  // payload itself so a cache hit returns the same topic, not just the
+  // freshly-generated path.
+  const responseBody = { ...parsed, topic }
+
+  await redis.set(cacheKey, responseBody, { ex: 86400 })
   await redis.incr(rateLimitKey)
   await redis.expire(rateLimitKey, 86400)
 
-  return NextResponse.json({ ...parsed, source: "gemini" })
+  return NextResponse.json({ ...responseBody, source: "gemini" })
 }

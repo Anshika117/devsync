@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 interface Props {
   folderId: string
@@ -16,12 +17,19 @@ export default function RenameFolderButton({ folderId, currentName }: Props) {
   async function handleRename() {
     if (!name.trim() || name === currentName) return
     setLoading(true)
-    await fetch("/api/folder/rename", {
+    const res = await fetch("/api/folder/rename", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId, name })
     })
     setLoading(false)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error || "Rename failed")
+      return
+    }
+
     setOpen(false)
     router.refresh()
   }

@@ -1,21 +1,20 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { findOrCreateFolder } from "@/lib/folderUpsert"
+import { parseBody, folderCreateSchema } from "@/lib/validation"
 
 export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { name } = await req.json()
+  const parsed = parseBody(folderCreateSchema, await req.json())
+  if ("error" in parsed) return parsed.error
+  const { name } = parsed.data
   const userId = session.user.id
 
-  if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 })
-
-  const folder = await prisma.folder.upsert({
-    where: { userId_name_type: { userId, name: name.trim(), type: "CUSTOM" } },
-    update: {},
-    create: { name: name.trim(), type: "CUSTOM", userId }
-  })
+  // Case-insensitive find-or-create — otherwise a user could create "Google
+  // Prep" and "google prep" as two separate CUSTOM folders by accident.
+  const folder = await findOrCreateFolder(userId, name, "CUSTOM")
 
   return NextResponse.json({ folder })
 }

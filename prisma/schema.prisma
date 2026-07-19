@@ -25,6 +25,20 @@ enum Difficulty {
   Unknown
 }
 
+// A folder's tier (Advanced / Intermediate / Fundamentals) is normally
+// derived automatically from its name via lib/tagNormalizer.ts's
+// getFolderTier(), matching how LeetCode itself classifies each tag. This
+// override exists because that's LeetCode's opinion, not necessarily the
+// user's — dragging a folder from one dashboard section into another (see
+// components/FolderGrid.tsx) sets this field so a personal "I consider this
+// Advanced" preference sticks across visits instead of resetting back to
+// the default classification every reload.
+enum FolderTier {
+  ADVANCED
+  INTERMEDIATE
+  FUNDAMENTALS
+}
+
 model User {
   id              String            @id @default(cuid())
   email           String            @unique
@@ -38,9 +52,13 @@ model User {
   progressRecords ProblemProgress[]
   activityLogs    ActivityLog[]
   revisionAlerts  RevisionAlert[]
+  recurringGoals  RecurringGoal[]
   lcUsername      String? // LeetCode username, set via profile page
   cfHandle        String? // Codeforces handle, set via profile page
   bufferDay       Int? // 0 (Sunday) - 6 (Saturday). The day the buffer-list reminder popup shows.
+  password        String? // bcrypt hash, only set for accounts registered via email/password.
+                          // Null for Google-only accounts — the Credentials provider's authorize()
+                          // treats a null password as "no credentials login possible for this email."
   accounts        Account[]
   sessions        Session[]
   dailyGoals      DailyGoal[]
@@ -54,8 +72,24 @@ model Folder {
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   problems  FolderProblem[]
   createdAt DateTime        @default(now())
+  order     Int             @default(0) // user-controlled position via drag-and-drop on the dashboard
+  tierOverride FolderTier?  // manual "move this to a different dashboard section" override; null = use getFolderTier(name)'s automatic classification
+
+  // One-level folder nesting, dragged in FolderGrid.tsx (drop onto a folder's
+  // center to nest, vs. near the edge to just reorder). Deliberately capped
+  // at one level — see /api/folder/nest's two-check rule — so this stays a
+  // simple parent+children shape instead of a real tree needing recursive
+  // rendering. onDelete: SetNull means deleting a parent promotes its
+  // children back to top-level automatically; their own problems are never
+  // touched by a parent's deletion, and each child folder stays independently
+  // deletable/movable exactly like any other folder (see DECISIONS.md).
+  parentId  String?
+  parent    Folder?         @relation("FolderNesting", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[]        @relation("FolderNesting")
 
   @@unique([userId, name, type])
+  @@index([userId, order])
+  @@index([parentId])
 }
 
 model Problem {
@@ -108,10 +142,21 @@ model ProblemProgress {
   mistakeCount   Int   @default(0)
   retentionScore Float @default(0.0)
 
+  // SM-2 (SuperMemo-2) spaced repetition state — same algorithm Anki uses.
+  // easeFactor starts at the standard SM-2 default of 2.5 and never drops
+  // below 1.3. intervalDays is the gap until the next scheduled review.
+  // nextReviewAt is null until the user rates a problem for the first time
+  // via /api/problem/review — the revision engine falls back to the older
+  // 30-day staleness heuristic for anything never explicitly reviewed.
+  easeFactor   Float     @default(2.5)
+  intervalDays Int       @default(0)
+  nextReviewAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([nextReviewAt])
 }
 
 model ActivityLog {
@@ -157,8 +202,39 @@ model DailyGoal {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
 
+  // Links a day's instance back to the recurring template it was spawned
+  // from (see RecurringGoal + ensureTodayRecurringGoals in lib/goalEngine.ts)
+  // — null for one-off goals added just for a single day, same as before
+  // this field existed. onDelete: SetNull means deleting a recurring goal
+  // only stops future days from getting a new instance; today's (and any
+  // past day's) row keeps its own title/done state regardless, since it's
+  // denormalized here rather than looked up through the relation.
+  recurringGoalId String?
+  recurringGoal   RecurringGoal? @relation(fields: [recurringGoalId], references: [id], onDelete: SetNull)
+
   @@index([userId])
   @@index([targetDate])
+  @@unique([recurringGoalId, targetDate])
+}
+
+// The user-managed "weekly goals" template (components/WeeklyGoalsList.tsx)
+// — a fixed, small list of things that should show up in the Today
+// checklist every single day without being re-typed. Deliberately separate
+// from DailyGoal itself rather than a boolean flag on it: a template and a
+// specific day's completion record are different concepts (one repeats
+// indefinitely, the other is a single day's fact), and conflating them would
+// make "stop this from repeating" and "what was checked off last Tuesday"
+// awkward to represent as the same row.
+model RecurringGoal {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  dailyGoals DailyGoal[]
+
+  @@index([userId, active])
 }
 
 model Account {

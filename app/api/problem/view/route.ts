@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { parseBody, problemIdSchema } from "@/lib/validation"
 
 // Called when a user clicks through to a problem's original platform link —
 // the closest thing this app has to a genuine "I looked at this again"
@@ -10,10 +11,10 @@ export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { problemId } = await req.json()
+  const parsed = parseBody(problemIdSchema, await req.json())
+  if ("error" in parsed) return parsed.error
+  const { problemId } = parsed.data
   const userId = session.user.id
-
-  if (!problemId) return NextResponse.json({ error: "problemId required" }, { status: 400 })
 
   const problem = await prisma.problem.findFirst({ where: { id: problemId, userId } })
   if (!problem) return NextResponse.json({ error: "Problem not found" }, { status: 404 })

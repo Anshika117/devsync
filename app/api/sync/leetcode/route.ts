@@ -2,9 +2,21 @@ import { auth } from "@/auth"
 import { NextResponse, after } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getPrimaryTag } from "@/lib/tagNormalizer"
+import { findOrCreateFolder } from "@/lib/folderUpsert"
+import { checkCooldown } from "@/lib/rateLimit"
+import { invalidateDashboardStats } from "@/lib/dashboardStats"
+import { mapWithConcurrency } from "@/lib/concurrency"
+import * as Sentry from "@sentry/nextjs"
 import type { Difficulty } from "@prisma/client"
+import { parseBody, syncUsernameSchema } from "@/lib/validation"
 
 const LC_GRAPHQL = "https://leetcode.com/graphql"
+
+// Minimum time between sync attempts for one user. Protects two things:
+// LeetCode's API from getting hammered by one impatient user double/triple
+// clicking "Sync", and this app's own DB from redundant upsert passes over
+// the same ~20 problems within seconds of each other.
+const SYNC_COOLDOWN_S = 5 * 60
 
 // LeetCode's public GraphQL API has no documented rate limit, but hammering it with
 // 40+ simultaneous requests risks 429s / IP flags. 8 in-flight requests is a safe
@@ -24,6 +36,16 @@ type LCQuestion = {
   difficulty: string
 }
 
+// Was hardcoded to 50 — an arbitrary number our own code chose, not a
+// documented LeetCode ceiling. Raised to a much larger ask (same "request
+// far more than anyone realistically needs" pattern the Codeforces route
+// already uses with count=10000): LeetCode's own server still decides the
+// real cap, so this is a no-downside change — worst case nothing above the
+// old ceiling comes back, best case a lot more of a user's real history
+// does. Couldn't verify which outcome happens from this sandbox (no
+// outbound network access here) — confirm on your own next sync.
+const RECENT_SUBMISSIONS_LIMIT = 10000
+
 async function getRecentSubmissions(username: string): Promise<LCSubmission[]> {
   const res = await fetch(LC_GRAPHQL, {
     method: "POST",
@@ -39,7 +61,7 @@ async function getRecentSubmissions(username: string): Promise<LCSubmission[]> {
           }
         }
       `,
-      variables: { username, limit: 50 },
+      variables: { username, limit: RECENT_SUBMISSIONS_LIMIT },
     }),
   })
   const data = await res.json()
@@ -82,31 +104,6 @@ async function getProblemTags(titleSlug: string): Promise<LCQuestion | null> {
   return data.data?.question ?? null
 }
 
-// Runs `worker` over `items` with at most `limit` requests in flight at once,
-// instead of either fully sequential (slow) or Promise.all (unbounded, risks
-// rate-limiting an external API we don't control).
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let cursor = 0
-
-  async function runWorker() {
-    while (cursor < items.length) {
-      const index = cursor++
-      results[index] = await worker(items[index])
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, runWorker)
-  )
-
-  return results
-}
-
 async function runLeetCodeSync(username: string, userId: string) {
   try {
     const submissions = await getRecentSubmissions(username)
@@ -139,13 +136,7 @@ async function runLeetCodeSync(username: string, userId: string) {
       const difficulty = (question.difficulty || "Unknown") as Difficulty
       const url = `https://leetcode.com/problems/${sub.titleSlug}/`
 
-      const folder = await prisma.folder.upsert({
-        where: {
-          userId_name_type: { userId, name: primaryTag, type: "AUTO" },
-        },
-        update: {},
-        create: { name: primaryTag, type: "AUTO", userId },
-      })
+      const folder = await findOrCreateFolder(userId, primaryTag, "AUTO")
 
       const problem = await prisma.problem.upsert({
         where: { userId_url: { userId, url } },
@@ -182,9 +173,23 @@ async function runLeetCodeSync(username: string, userId: string) {
       data: { userId, action: "LEETCODE_SYNC", status: "SUCCESS" },
     })
 
+    // Sync just changed this user's problem count/difficulty mix — drop the
+    // cached dashboard stats so the "refresh your dashboard" promise in the
+    // response below is actually true instead of showing up-to-10-min-old
+    // numbers. See lib/dashboardStats.ts.
+    await invalidateDashboardStats(userId)
+
     return synced
   } catch (error: unknown) {
     console.error("LeetCode sync error:", error)
+    // This runs inside next/server's after(), completely detached from the
+    // request/response cycle — the client already got its "sync started"
+    // response and has no way to see this failure. Before Sentry, the only
+    // record of it was this console.error (gone once the server process
+    // rotates logs) and an ActivityLog row (which nothing actively watches;
+    // a user would have to know to go look at it). Sentry.captureException
+    // means a background sync failure actually surfaces somewhere.
+    Sentry.captureException(error, { tags: { route: "sync/leetcode" }, extra: { userId } })
     const message = error instanceof Error ? error.message : "Unknown error"
     await prisma.activityLog.create({
       data: {
@@ -206,13 +211,15 @@ export async function POST(req: Request) {
   }
 
   const userId = session.user.id
-  const body = await req.json()
-  const username = body.username?.trim()
+  const parsed = parseBody(syncUsernameSchema, await req.json())
+  if ("error" in parsed) return parsed.error
+  const { username } = parsed.data
 
-  if (!username) {
+  const allowed = await checkCooldown("sync:leetcode", userId, SYNC_COOLDOWN_S)
+  if (!allowed) {
     return NextResponse.json(
-      { error: "LeetCode username required" },
-      { status: 400 }
+      { error: "You just synced LeetCode — please wait a few minutes and try again." },
+      { status: 429 }
     )
   }
 

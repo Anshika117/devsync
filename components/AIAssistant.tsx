@@ -12,6 +12,7 @@ export default function AIAssistant() {
     similarFound: string
     similarApproach: string
     source: string
+    topic: string | null
   } | null>(null)
   const [error, setError] = useState("")
 
@@ -121,8 +122,14 @@ export default function AIAssistant() {
             {mode === "result" && result && (
               <div className="p-6">
                 {result.source === "cache" && (
-                  <div className="text-xs bg-green-900 text-green-300 px-3 py-1 rounded-full inline-block mb-4">
+                  <div className="text-xs bg-green-900 text-green-300 px-3 py-1 rounded-full inline-block mb-2">
                     ⚡ Served from cache
+                  </div>
+                )}
+
+                {result.topic && (
+                  <div className="text-xs bg-purple-900/60 text-purple-300 px-3 py-1 rounded-full inline-block mb-4 ml-0">
+                    🧭 Classified as: {result.topic}
                   </div>
                 )}
 
@@ -132,6 +139,15 @@ export default function AIAssistant() {
                     {result.similarApproach && (
                       <p className="text-blue-200/80 text-xs mt-1">{result.similarApproach}</p>
                     )}
+                    {result.topic && (
+                      <p className="text-blue-200/60 text-xs mt-2">Pulled from your {result.topic} solves specifically, not your whole history.</p>
+                    )}
+                  </div>
+                )}
+
+                {!result.similarFound && result.topic && (
+                  <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-3 mb-4">
+                    <p className="text-gray-400 text-xs">No close match yet in your {result.topic} solves — hints below are based on your overall profile instead.</p>
                   </div>
                 )}
 

@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { parseBody, profileUpdateSchema } from "@/lib/validation"
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -8,15 +9,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { lcUsername, cfHandle, bufferDay } = await req.json()
-
-  if (
-    bufferDay !== undefined &&
-    bufferDay !== null &&
-    (typeof bufferDay !== "number" || bufferDay < 0 || bufferDay > 6)
-  ) {
-    return NextResponse.json({ error: "bufferDay must be 0-6 or null" }, { status: 400 })
-  }
+  const parsed = parseBody(profileUpdateSchema, await req.json())
+  if ("error" in parsed) return parsed.error
+  const { lcUsername, cfHandle, bufferDay } = parsed.data
 
   await prisma.user.update({
     where: { id: session.user.id },

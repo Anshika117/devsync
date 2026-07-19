@@ -81,13 +81,14 @@ User clicks "Sync LeetCode"
 ┌─────────────────────┐
 │  LeetCode GraphQL   │  POST https://leetcode.com/graphql
 │  recentAcSubmission │  → returns [{id, title, titleSlug, timestamp}]
-│  List(limit: 50)    │
-└────────┬────────────┘
-         │
-         ▼  (for each problem)
+│  List(limit: 10000) │  (raised from a hardcoded 50 — LeetCode's own
+└────────┬────────────┘   server decides the real ceiling, this just stops
+         │                our own code from capping it artificially)
+         ▼  (for each problem, 8 in flight at a time)
 ┌─────────────────────┐
 │  Tag Fetch          │  POST https://leetcode.com/graphql
 │  question(titleSlug)│  → returns [{topicTags: [{name}]}, difficulty]
+│  (bounded concurrency, lib/concurrency.ts — not sequential)
 └────────┬────────────┘
          │
          ▼
@@ -202,16 +203,20 @@ FolderProblem                       ← join table (many-to-many)
  ├── @@index([folderId])
  └── @@index([problemId])
 
-ProblemProgress                     ← revision intelligence
+ProblemProgress                     ← revision intelligence + SM-2 schedule
  ├── retentionScore, mistakeCount
  ├── lastViewedAt, lastRevisedAt
- └── revisionCount
+ ├── revisionCount
+ └── easeFactor, intervalDays, nextReviewAt   (SM-2 spaced-repetition state)
 
 ActivityLog                         ← observability
  └── action, status, error, createdAt
 
-Goal                                ← weekly targets
+Goal                                ← weekly targets (schema exists, not yet wired to a route)
  └── weeklyEasy, weeklyMed, weeklyHard, doneEasy, doneMed, doneHard
+
+DailyGoal                           ← daily checklist + buffer list
+ └── title, done, targetDate, completedAt
 ```
 
 **Key schema decisions:**
@@ -230,7 +235,7 @@ During sync, the system must update problem counts in AUTO folders without touch
 
 ### 2. Why two GraphQL calls per problem during sync?
 
-LeetCode's `recentAcSubmissionList` returns submission metadata but **not** topic tags. A second call to `question(titleSlug)` fetches tags and difficulty. This is a known LeetCode API limitation. The tradeoff: 20 problems = 40 API calls. Acceptable at current scale; at 10,000 users this would need a queue with rate limiting and caching.
+LeetCode's `recentAcSubmissionList` returns submission metadata but **not** topic tags. A second call to `question(titleSlug)` fetches tags and difficulty. This is a known LeetCode API limitation. The tradeoff: N problems = N+1 API calls, run with a bounded-concurrency worker pool (`lib/concurrency.ts`, 8 in flight) instead of one at a time — fast enough at one-user-at-a-time scale, but at real multi-user scale this would need a queue with rate limiting and caching in front of LeetCode's API.
 
 ### 3. Why Prisma 7 with PrismaPg adapter?
 
@@ -257,6 +262,9 @@ Codeforces uses a rating system (800–3500) rather than Easy/Medium/Hard labels
 | DB Adapter | PrismaPg | 7.8.0 | Required for Prisma 7 with Supabase connection pooler |
 | Database | Supabase PostgreSQL | — | Managed Postgres with pgvector ready for v2 RAG pipeline |
 | Styling | Tailwind CSS | v4 | Utility-first, no runtime CSS |
+| AI | Google Gemini (`@google/generative-ai`) | — | Powers profile-aware, RAG-lite problem hints |
+| Cache / Rate Limit | Upstash Redis | — | Caches AI hint responses, enforces per-user daily hint limits |
+| Toasts | sonner | — | Lightweight client-side feedback (SM-2 review results, save states) |
 | Deployment | Vercel | — | Zero-config Next.js deploy, auto deploys on push |
 
 ---
@@ -264,25 +272,30 @@ Codeforces uses a rating system (800–3500) rather than Easy/Medium/Hard labels
 ## Features
 
 ### ✅ Implemented (v1)
-- **Google OAuth** — one-click sign in, user row auto-created via PrismaAdapter
+- **Google OAuth** — one-click sign in, user row auto-created via PrismaAdapter; JWT sessions (not DB sessions) for zero-DB-call auth checks on every request
 - **LeetCode Sync** — GraphQL API, fetches accepted submissions with topic tags
 - **Codeforces Sync** — REST API, rating-to-difficulty normalization
 - **Auto Folder Creation** — 3-tier tag priority classifier creates topic folders during sync
 - **Custom Folders** — user-created folders (Revision, Google Prep, etc.) never touched by sync
-- **Problem Cards** — title links to original platform, difficulty badge, topic tags
-- **Search & Filter** — client-side real-time search + difficulty filter per folder
+- **Drag-and-Drop Folder Ordering** — reorder folders on the dashboard (native HTML5 DnD, persisted per-user via a `Folder.order` column); system folders (Needs Revision, Revision) stay pinned to the top
+- **Problem Cards** — title links to original platform, difficulty badge, topic tags, per-problem notes
+- **Search & Filter** — client-side real-time search + difficulty filter per folder, plus a searchable folder picker in the "move to folder" action
+- **Needs Revision (Auto-Staleness Folder)** — recomputed on every dashboard load, grouped into topic subfolders (same tag classifier as sync) so stale problems read like a normal folder tree, not one long list
+- **SM-2 Spaced Repetition** — rate recall (Again/Hard/Good/Easy) on any problem card; the same scheduling algorithm Anki uses computes the next review date, which "Needs Revision" reads directly once a problem has been rated at least once
 - **Revision Stars** — star a problem → added to Revision CUSTOM folder
+- **Daily Goals + Buffer List** — free-form daily checklist, unfinished goals roll into a 2-week buffer list, a weekly completion graph, and an opt-in buffer-day popup reminder
+- **AI Hints (topic-scoped RAG)** — Gemini-generated, profile-aware hints per problem. First classifies the pasted problem statement into a topic (reusing the same tag taxonomy the sync engine uses, plus a small phrase-signal table for wording that isn't a literal tag), then retrieves similar past-solved problems scoped to that topic branch first — widening to the same difficulty tier, then the full history, only if the branch is too thin. Also computes branch-specific stats (solved/hard/struggled within that topic) alongside the overall profile, caches responses, and rate-limits per user via Upstash Redis. (Retrieval is still tag/keyword scoring, not vector similarity — see Roadmap.)
 - **Profile Page** — save LC username and CF handle, trigger syncs
 - **ActivityLog** — every sync logged with status for observability
-- **Dashboard** — real-time problem count, folder count, weekly goal placeholder
+- **Dashboard** — real-time problem count, folder count, solved-by-difficulty breakdown (Easy/Med/Hard)
+- **CI** — GitHub Actions runs install → prisma generate → lint → build on every push/PR
 
 ### 🔲 Roadmap (v2)
-- **RAG Pipeline** — embed notes with OpenAI text-embedding-3-small, store in pgvector, personalized hints via GPT-4o
-- **SM-2 Spaced Repetition** — scientifically optimal revision scheduling (same algorithm as Anki)
-- **AI Problem Visualizer** — paste problem statement → animated visual breakdown via GPT-4o
+- **True Embedding-Based RAG** — the current AI hints use topic-scoped tag/keyword-overlap retrieval (see Features), not real vector similarity; swap in `text-embedding-3-small`-style embeddings + pgvector for actual semantic search within each topic branch
+- **AI Problem Visualizer** — paste problem statement → animated visual breakdown via GPT-4o/Gemini
 - **Real-time Collab Rooms** — Socket.IO rooms for pair problem-solving, ephemeral state with DB persistence
-- **Redis Caching** — sync results cached 10min, rate limiting per user, last-sync timestamp
-- **Revision Intelligence** — scoring function: time since last seen × difficulty × topic weakness ratio
+- **Revision Intelligence Scoring** — `ProblemProgress.retentionScore`/`mistakeCount` exist but aren't combined into a single weakness-ranking signal yet (time since last seen × difficulty × topic weakness ratio)
+- **Real Notifications** — buffer-day reminders and stale-problem alerts are both "check on page load" today; an actual email/push channel with a scheduled trigger is a materially bigger addition, not yet built
 
 ---
 

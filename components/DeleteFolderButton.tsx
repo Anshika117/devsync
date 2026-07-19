@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 interface Props {
   folderId: string
@@ -17,12 +18,19 @@ export default function DeleteFolderButton({ folderId, folderName, allFolders }:
 
   async function handleDelete() {
     setLoading(true)
-    await fetch("/api/folder/delete", {
+    const res = await fetch("/api/folder/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId, action, targetFolderId })
     })
     setLoading(false)
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error || "Delete failed")
+      return
+    }
+
     setShowModal(false)
     router.push("/dashboard")
     router.refresh()

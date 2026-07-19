@@ -6,7 +6,7 @@ import Link from "next/link"
 import FolderGrid from "@/components/FolderGrid"
 import CreateFolderButton from "@/components/CreateFolderButton"
 import { syncNeedsRevisionFolder } from "@/lib/revisionEngine"
-import { getWeeklyCompletion } from "@/lib/goalEngine"
+import { getDashboardStats } from "@/lib/dashboardStats"
 
 // Folder names that should always float to the top of the dashboard,
 // regardless of type/creation-date ordering — in this priority order.
@@ -25,26 +25,20 @@ export default async function DashboardPage() {
   const { count: staleCount, folderId: needsRevisionFolderId } =
     await syncNeedsRevisionFolder(userId)
 
-  const [folders, problemCount, weeklyCompletion] = await Promise.all([
+  const [folders, stats] = await Promise.all([
     prisma.folder.findMany({
       where: { userId },
-      include: { _count: { select: { problems: true } } },
+      include: { _count: { select: { problems: true, children: true } } },
       orderBy: [
-        { type: "asc" }, // AUTO before CUSTOM alphabetically
+        { order: "asc" }, // drag-and-drop position, set via /api/folder/reorder
+        { type: "asc" }, // AUTO before CUSTOM alphabetically — tiebreaker for order:0 ties
         { createdAt: "asc" }
       ],
     }),
-    prisma.problem.count({ where: { userId } }),
-    getWeeklyCompletion(userId),
+    getDashboardStats(userId),
   ])
 
-  // Average completion across days that have already happened this week
-  // (today included) — future days would just drag the average toward 0%
-  // for no reason since they haven't happened yet.
-  const daysSoFar = weeklyCompletion.filter(d => !d.isFuture)
-  const weeklyPercent = daysSoFar.length === 0
-    ? 0
-    : Math.round(daysSoFar.reduce((sum, d) => sum + d.percent, 0) / daysSoFar.length)
+  const { problemCount, difficultyCounts } = stats
 
   const sortedFolders = [...folders].sort((a, b) => {
     const aPin = PINNED_FOLDER_NAMES.indexOf(a.name)
@@ -83,10 +77,21 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-semibold mb-1">Folders</h2>
           <p className="text-4xl font-bold text-purple-400">{folders.length}</p>
         </div>
-        <Link href="/goals" className="bg-gray-900 rounded-xl p-6 hover:bg-gray-800 transition block">
-          <h2 className="text-lg font-semibold mb-1">Weekly Goal</h2>
-          <p className="text-4xl font-bold text-green-400">{weeklyPercent}%</p>
-        </Link>
+        <div className="bg-gray-900 rounded-xl p-6">
+          <h2 className="text-lg font-semibold mb-3">By Difficulty</h2>
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-semibold text-teal-400">Easy</span>
+            <span className="font-bold text-white">{difficultyCounts.Easy}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm mt-2">
+            <span className="font-semibold text-yellow-400">Med.</span>
+            <span className="font-bold text-white">{difficultyCounts.Medium}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm mt-2">
+            <span className="font-semibold text-red-400">Hard</span>
+            <span className="font-bold text-white">{difficultyCounts.Hard}</span>
+          </div>
+        </div>
       </div>
 
       {/* Folders */}

@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { parseBody, revisionToggleSchema } from "@/lib/validation"
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -8,7 +9,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { problemId } = await req.json()
+  const parsed = parseBody(revisionToggleSchema, await req.json())
+  if ("error" in parsed) return parsed.error
+  const { problemId } = parsed.data
   const userId = session.user.id
 
   const problem = await prisma.problem.findFirst({ where: { id: problemId, userId } })

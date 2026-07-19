@@ -12,12 +12,51 @@ function addDays(date: Date, days: number): Date {
   return d
 }
 
-// Today's checklist — goals whose targetDate is today.
+// Today's checklist — goals whose targetDate is today. Call
+// ensureTodayRecurringGoals(userId) first (see below) so today's spawned
+// instances already exist by the time this query runs.
 export async function getTodayGoals(userId: string) {
   const today = startOfDay(new Date())
   return prisma.dailyGoal.findMany({
     where: { userId, targetDate: today },
     orderBy: { createdAt: "asc" },
+  })
+}
+
+// The user-managed "repeats every day" template — see RecurringGoal in
+// schema.prisma. Only active ones; a removed goal stops showing up here
+// (and stops spawning new days) but its past DailyGoal rows are untouched.
+export async function getRecurringGoals(userId: string) {
+  return prisma.recurringGoal.findMany({
+    where: { userId, active: true },
+    orderBy: { createdAt: "asc" },
+  })
+}
+
+// Self-healing, same shape as revisionEngine.ts's syncNeedsRevisionFolder —
+// no scheduled-job infrastructure exists in this app, so instead of a cron
+// spawning each day's instances at midnight, this runs whenever the goals
+// page loads and creates any of today's rows that don't exist yet for the
+// user's active recurring goals. createMany + skipDuplicates leans on the
+// (recurringGoalId, targetDate) unique constraint, so calling this more than
+// once in the same day (two tabs open, a page refresh) is a safe no-op —
+// nothing gets double-created.
+export async function ensureTodayRecurringGoals(userId: string) {
+  const today = startOfDay(new Date())
+  const recurring = await prisma.recurringGoal.findMany({
+    where: { userId, active: true },
+    select: { id: true, title: true },
+  })
+  if (recurring.length === 0) return
+
+  await prisma.dailyGoal.createMany({
+    data: recurring.map((r) => ({
+      userId,
+      title: r.title,
+      targetDate: today,
+      recurringGoalId: r.id,
+    })),
+    skipDuplicates: true,
   })
 }
 
@@ -68,6 +107,53 @@ export async function getWeeklyCompletion(userId: string) {
       done,
     }
   })
+}
+
+const STREAK_LOOKBACK_DAYS = 400
+
+// Current consecutive-day streak: how many days in a row (ending today or
+// yesterday) had at least one goal AND all of them checked off. A day with
+// zero goals counts as a break, same as a day with unfinished ones — the
+// streak is meant to reflect "showed up and finished what I set," not just
+// "didn't fail anything because there was nothing to fail."
+//
+// Today is a special case: if it's not yet fully done (still in progress,
+// or no goals added yet), it's skipped rather than treated as a break, so
+// an unfinished "today" doesn't zero out a real streak built through
+// yesterday. Once today is itself complete, it's counted like any other day.
+export async function getGoalStreak(userId: string): Promise<number> {
+  const today = startOfDay(new Date())
+  const earliest = addDays(today, -STREAK_LOOKBACK_DAYS)
+
+  const goals = await prisma.dailyGoal.findMany({
+    where: { userId, targetDate: { gte: earliest, lte: today } },
+    select: { targetDate: true, done: true },
+  })
+
+  const byDay = new Map<number, { total: number; done: number }>()
+  for (const g of goals) {
+    const key = g.targetDate.getTime()
+    const entry = byDay.get(key) ?? { total: 0, done: 0 }
+    entry.total += 1
+    if (g.done) entry.done += 1
+    byDay.set(key, entry)
+  }
+
+  function dayComplete(day: Date): boolean {
+    const entry = byDay.get(day.getTime())
+    return !!entry && entry.total > 0 && entry.done === entry.total
+  }
+
+  let streak = 0
+  let cursor = today
+  if (!dayComplete(cursor)) {
+    cursor = addDays(cursor, -1)
+  }
+  while (dayComplete(cursor)) {
+    streak += 1
+    cursor = addDays(cursor, -1)
+  }
+  return streak
 }
 
 // The entire "notification": true only if today matches the user's chosen

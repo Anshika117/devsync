@@ -6,11 +6,15 @@ import {
   getBufferGoals,
   getWeeklyCompletion,
   shouldShowBufferReminder,
+  getRecurringGoals,
+  ensureTodayRecurringGoals,
+  getGoalStreak,
 } from "@/lib/goalEngine"
 import AddGoalInput from "@/components/AddGoalInput"
 import GoalList from "@/components/GoalList"
 import WeeklyGraph from "@/components/WeeklyGraph"
 import BufferReminderPopup from "@/components/BufferReminderPopup"
+import WeeklyGoalsList from "@/components/WeeklyGoalsList"
 
 export default async function GoalsPage() {
   const session = await auth()
@@ -18,18 +22,35 @@ export default async function GoalsPage() {
 
   const userId = session.user.id
 
-  const [todayGoals, bufferGoals, weekly, showReminder] = await Promise.all([
+  // Must run before getTodayGoals below — it creates today's rows for any
+  // active recurring goal that doesn't have one yet, same "self-heal on
+  // read" shape as syncNeedsRevisionFolder on the dashboard.
+  await ensureTodayRecurringGoals(userId)
+
+  const [todayGoals, bufferGoals, weekly, showReminder, recurringGoals, streak] = await Promise.all([
     getTodayGoals(userId),
     getBufferGoals(userId),
     getWeeklyCompletion(userId),
     shouldShowBufferReminder(userId),
+    getRecurringGoals(userId),
+    getGoalStreak(userId),
   ])
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-8 max-w-3xl mx-auto">
       <BufferReminderPopup show={showReminder} count={bufferGoals.length} />
 
-      <h1 className="text-3xl font-bold mb-8">Goals</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold">Goals</h1>
+        {streak > 0 && (
+          <div className="flex items-center gap-2 bg-gray-900 border border-orange-500/30 rounded-full px-4 py-1.5">
+            <span className="text-lg leading-none">🔥</span>
+            <span className="text-sm font-semibold text-orange-400">
+              {streak} day{streak === 1 ? "" : "s"} streak
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="mb-10">
         <WeeklyGraph
@@ -39,6 +60,12 @@ export default async function GoalsPage() {
             isToday: d.isToday,
             isFuture: d.isFuture,
           }))}
+        />
+      </div>
+
+      <div className="mb-10">
+        <WeeklyGoalsList
+          goals={recurringGoals.map(g => ({ id: g.id, title: g.title }))}
         />
       </div>
 
